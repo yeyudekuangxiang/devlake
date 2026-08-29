@@ -149,7 +149,9 @@ RUN python3 -m pip install --no-cache --upgrade pip setuptools && \
     python3 -m pip install --upgrade pip
 
 # Setup Python Poetry package manager
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Pin Poetry to a version compatible with Python 3.9 (latest Poetry drops 3.9
+# support and fails to install on this base image).
+RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=2.2.1 python3 -
 ENV PATH="$PATH:/app/.local/bin"
 
 # Build Python plugins, make sure the scripts has execute permission
