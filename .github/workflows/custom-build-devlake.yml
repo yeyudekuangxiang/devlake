@@ -1,0 +1,70 @@
+#
+# Custom workflow: build the DevLake backend image (with the GitLab clone-host
+# override patch) and push it to Docker Hub.
+#
+# Requires repository secrets:
+#   DOCKERHUB_USERNAME  - your Docker Hub login (e.g. yeyudekuangxiang)
+#   DOCKERHUB_TOKEN     - a Docker Hub access token
+#
+# The image is pushed to:  <DOCKERHUB_USERNAME>/devlake
+#
+name: Custom-Build-DevLake
+
+on:
+  # allow manual trigger from the Actions tab
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to push"
+        required: true
+        default: "v1.0.2-beta9-custom"
+  # also build automatically when pushing to a custom/* branch
+  push:
+    branches:
+      - "custom/**"
+
+jobs:
+  build-and-push:
+    name: Build and push devlake backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get short sha
+        id: sha
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Resolve image tag
+        id: meta
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "TAG=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=v1.0.2-beta9-custom" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          # Synology with the Docker package is x86_64. If your NAS is ARM,
+          # change this to linux/arm64 (or linux/amd64,linux/arm64 for both).
+          platforms: linux/amd64
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/devlake:${{ steps.meta.outputs.TAG }}
+          build-args: |
+            TAG=${{ steps.meta.outputs.TAG }}
+            SHA=${{ steps.sha.outputs.SHORT_SHA }}

@@ -23,6 +23,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 
 	"github.com/apache/incubator-devlake/plugins/gitlab/tasks"
 
@@ -130,6 +132,23 @@ func makePipelinePlanV200(
 			cloneUrl, err := errors.Convert01(url.Parse(gitlabProject.HttpUrlToRepo))
 			if err != nil {
 				return nil, err
+			}
+			// CUSTOM: GitLab may return an internal/unreachable clone host (when
+			// external_url is not configured). Allow overriding the clone host and
+			// scheme via environment variables so gitextractor can clone through a
+			// reachable (e.g. public reverse-proxied) domain instead.
+			//   GITLAB_CLONE_HOST       new host (or host:port) to use for cloning
+			//   GITLAB_CLONE_SCHEME     new scheme, e.g. "https"
+			//   GITLAB_CLONE_HOST_FROM  optional; only override when the current
+			//                           host equals this value (host or host:port)
+			if newHost := strings.TrimSpace(os.Getenv("GITLAB_CLONE_HOST")); newHost != "" {
+				from := strings.TrimSpace(os.Getenv("GITLAB_CLONE_HOST_FROM"))
+				if from == "" || cloneUrl.Host == from {
+					cloneUrl.Host = newHost
+					if newScheme := strings.TrimSpace(os.Getenv("GITLAB_CLONE_SCHEME")); newScheme != "" {
+						cloneUrl.Scheme = newScheme
+					}
+				}
 			}
 			cloneUrl.User = url.UserPassword("git", connection.Token)
 			stage = append(stage, &coreModels.PipelineTask{
