@@ -133,22 +133,25 @@ func makePipelinePlanV200(
 			if err != nil {
 				return nil, err
 			}
-			// CUSTOM: GitLab may return an internal/unreachable clone host (when
-			// external_url is not configured). Allow overriding the clone host and
-			// scheme via environment variables so gitextractor can clone through a
-			// reachable (e.g. public reverse-proxied) domain instead.
-			//   GITLAB_CLONE_HOST       new host (or host:port) to use for cloning
-			//   GITLAB_CLONE_SCHEME     new scheme, e.g. "https"
-			//   GITLAB_CLONE_HOST_FROM  optional; only override when the current
-			//                           host equals this value (host or host:port)
-			if newHost := strings.TrimSpace(os.Getenv("GITLAB_CLONE_HOST")); newHost != "" {
-				from := strings.TrimSpace(os.Getenv("GITLAB_CLONE_HOST_FROM"))
-				if from == "" || cloneUrl.Host == from {
-					cloneUrl.Host = newHost
-					if newScheme := strings.TrimSpace(os.Getenv("GITLAB_CLONE_SCHEME")); newScheme != "" {
-						cloneUrl.Scheme = newScheme
-					}
+			// CUSTOM: GitLab may return an internal/unreachable clone host in
+			// HttpUrlToRepo when its external_url is not configured. DevLake already
+			// reaches this connection through connection.Endpoint (that's how API
+			// collection works), so clone through the SAME host/scheme. This is
+			// derived per-connection, so multiple GitLab connections each clone via
+			// their own endpoint. When GitLab's external_url is correct (or on GitLab
+			// Cloud) the endpoint host equals the clone host, so this is a no-op.
+			//
+			// A global GITLAB_CLONE_HOST (+ optional GITLAB_CLONE_SCHEME) env var can
+			// still force an override for the rare case where the git clone host must
+			// differ from the API host.
+			if override := strings.TrimSpace(os.Getenv("GITLAB_CLONE_HOST")); override != "" {
+				cloneUrl.Host = override
+				if s := strings.TrimSpace(os.Getenv("GITLAB_CLONE_SCHEME")); s != "" {
+					cloneUrl.Scheme = s
 				}
+			} else if endpoint, epErr := url.Parse(connection.Endpoint); epErr == nil && endpoint.Host != "" {
+				cloneUrl.Scheme = endpoint.Scheme
+				cloneUrl.Host = endpoint.Host
 			}
 			cloneUrl.User = url.UserPassword("git", connection.Token)
 			stage = append(stage, &coreModels.PipelineTask{
